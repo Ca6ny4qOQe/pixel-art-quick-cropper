@@ -1,2 +1,2 @@
 # pixel-art-quick-cropper
-A program to efficiently crop individual sprites from irregular sprite sheets
+A program to efficiently (manually) crop individual sprites from irregular sprite sheets
