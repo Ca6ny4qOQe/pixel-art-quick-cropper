@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pixel Art Quick Cropper</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: white;
+      padding: 20px;
+      text-align: center;
+    }
+
+    canvas {
+      image-rendering: pixelated;
+      border: 1px solid #444;
+      cursor: crosshair;
+    }
+
+    #selection-box {
+      position: absolute;
+      border: 1px solid red;
+      background-color: rgba(255, 0, 0, 0.2);
+      box-sizing: border-box;
+      pointer-events: none;
+    }
+
+    #image-container {
+      display: inline-block;
+      position: relative;
+      margin-bottom: 20px;
+    }
+
+    #controls {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+    }
+
+    button, input[type="file"], input[type="range"] {
+      padding: 6px 12px;
+      margin: 4px;
+    }
+
+    label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .numeric-input {
+      width: 50px;
+      padding: 4px;
+      text-align: center;
+      background: #333;
+      color: white;
+      border: 1px solid #444;
+      border-radius: 4px;
+    }
+
+    .coordinates {
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>Pixel Art Quick Cropper</h1>
+  <p>Upload pixel art, drag the selection, adjust size and export resolution.</p>
+
+  <div id="image-container" style="display: none;">
+    <canvas id="preview"></canvas>
+    <div id="selection-box"></div>
+  </div>
+
+  <div id="controls">
+    <input type="file" id="upload" accept="image/*" />
+    <div style="display: none;" id="download-controls">
+      <div class="slider-container">
+        <label>📐 Width:</label>
+        <input type="range" id="width-slider" min="1" value="10" />
+        <input type="number" id="width-input" class="numeric-input" min="1" value="10" />
+      </div>
+      <div class="slider-container">
+        <label>📏 Height:</label>
+        <input type="range" id="height-slider" min="1" value="10" />
+        <input type="number" id="height-input" class="numeric-input" min="1" value="10" />
+      </div>
+      <div class="slider-container">
+        <label>🔍 Output Scale:</label>
+        <input type="range" id="scale-slider" min="1" max="500" value="1" />
+        <input type="number" id="scale-input" class="numeric-input" min="1" max="500" value="1" />
+      </div>
+      <div><button id="download-btn">Download Selection</button></div>
+      <span class="coordinates">Position: <span id="pos">0, 0</span></span>
+    </div>
+  </div>
+
+  <script>
+    const upload = document.getElementById('upload');
+    const preview = document.getElementById('preview');
+    const ctx = preview.getContext('2d');
+    const container = document.getElementById('image-container');
+    const selectionBox = document.getElementById('selection-box');
+    const posDisplay = document.getElementById('pos');
+    const downloadBtn = document.getElementById('download-btn');
+    const downloadControls = document.getElementById('download-controls');
+    const widthSlider = document.getElementById('width-slider');
+    const heightSlider = document.getElementById('height-slider');
+    const scaleSlider = document.getElementById('scale-slider');
+    const widthInput = document.getElementById('width-input');
+    const heightInput = document.getElementById('height-input');
+    const scaleInput = document.getElementById('scale-input');
+
+    const scaleFactor = 8;
+    let img = new Image();
+    let realImage = new Image();
+    let realWidth = 0;
+    let realHeight = 0;
+
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    let isDragging = false;
+    let posX = 0;
+    let posY = 0;
+    let selW = 10;
+    let selH = 10;
+
+    function updateWidth(value) {
+      value = Math.max(1, Math.min(value, realWidth - posX));
+      widthSlider.value = value;
+      widthInput.value = value;
+      selW = value;
+      moveSelection(posX, posY);
+    }
+
+    function updateHeight(value) {
+      value = Math.max(1, Math.min(value, realHeight - posY));
+      heightSlider.value = value;
+      heightInput.value = value;
+      selH = value;
+      moveSelection(posX, posY);
+    }
+
+    function updateScale(value) {
+      value = Math.max(1, Math.min(value, 500));
+      scaleSlider.value = value;
+      scaleInput.value = value;
+    }
+
+    upload.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        img.onload = () => {
+          realWidth = img.width;
+          realHeight = img.height;
+
+          preview.width = realWidth * scaleFactor;
+          preview.height = realHeight * scaleFactor;
+          ctx.imageSmoothingEnabled = false;
+          ctx.clearRect(0, 0, preview.width, preview.height);
+          ctx.drawImage(img, 0, 0, preview.width, preview.height);
+
+          container.style.display = 'inline-block';
+          downloadControls.style.display = 'flex';
+
+          widthSlider.max = realWidth;
+          heightSlider.max = realHeight;
+          widthInput.max = realWidth;
+          heightInput.max = realHeight;
+
+          updateWidth(10);
+          updateHeight(10);
+          updateScale(1);
+
+          moveSelection(0, 0);
+        };
+        img.src = ev.target.result;
+        realImage.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    function moveSelection(x, y) {
+      posX = Math.max(0, Math.min(x, realWidth - selW));
+      posY = Math.max(0, Math.min(y, realHeight - selH));
+      selectionBox.style.width = `${selW * scaleFactor}px`;
+      selectionBox.style.height = `${selH * scaleFactor}px`;
+      selectionBox.style.left = `${posX * scaleFactor}px`;
+      selectionBox.style.top = `${posY * scaleFactor}px`;
+      posDisplay.textContent = `${posX}, ${posY}`;
+      
+      widthSlider.max = realWidth - posX;
+      heightSlider.max = realHeight - posY;
+      widthInput.max = realWidth - posX;
+      heightInput.max = realHeight - posY;
+    }
+
+    preview.addEventListener('mousedown', (e) => {
+      const rect = preview.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const pixelX = Math.floor(mouseX / scaleFactor);
+      const pixelY = Math.floor(mouseY / scaleFactor);
+      const relX = pixelX - posX;
+      const relY = pixelY - posY;
+
+      if (relX >= 0 && relX < selW && relY >= 0 && relY < selH) {
+        isDragging = true;
+        dragOffsetX = relX;
+        dragOffsetY = relY;
+      }
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const rect = preview.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const pixelX = Math.floor(mouseX / scaleFactor);
+      const pixelY = Math.floor(mouseY / scaleFactor);
+      const newX = pixelX - dragOffsetX;
+      const newY = pixelY - dragOffsetY;
+      moveSelection(newX, newY);
+    });
+
+    document.addEventListener('mouseup', () => {
+      isDragging = false;
+    });
+
+    widthSlider.addEventListener('input', () => {
+      updateWidth(parseInt(widthSlider.value));
+    });
+
+    heightSlider.addEventListener('input', () => {
+      updateHeight(parseInt(heightSlider.value));
+    });
+
+    scaleSlider.addEventListener('input', () => {
+      updateScale(parseInt(scaleSlider.value));
+    });
+
+    widthInput.addEventListener('change', () => {
+      updateWidth(parseInt(widthInput.value) || 1);
+    });
+
+    heightInput.addEventListener('change', () => {
+      updateHeight(parseInt(heightInput.value) || 1);
+    });
+
+    scaleInput.addEventListener('change', () => {
+      updateScale(parseInt(scaleInput.value) || 1);
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = selW * scaleSlider.value;
+      canvas.height = selH * scaleSlider.value;
+      const ctx2 = canvas.getContext('2d');
+      ctx2.imageSmoothingEnabled = false;
+      ctx2.drawImage(realImage, posX, posY, selW, selH, 0, 0, canvas.width, canvas.height);
+
+      const link = document.createElement('a');
+      link.download = `emoji-${posX}-${posY}-${selW}x${selH}@${scaleSlider.value}x.png`;
+      link.href = canvas.toDataURL();
+      link.click();
+    });
+  </script>
+</body>
+</html>
